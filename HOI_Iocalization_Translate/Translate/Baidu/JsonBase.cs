@@ -17,6 +17,12 @@ namespace HOI_Iocalization_Translate.Translate.Baidu
 
         [JsonProperty("trans_result")]
         public List<TransResult> TransResult { get; set; }
+
+        [JsonProperty("error_code")]
+        public string ErrorCode { get; set; }
+
+        [JsonProperty("error_msg")]
+        public string ErrorMsg { get; set; }
     }
 
     public partial class TransResult
