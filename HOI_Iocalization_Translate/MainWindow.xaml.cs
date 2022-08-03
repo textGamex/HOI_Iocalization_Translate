@@ -70,7 +70,17 @@ namespace HOI_Iocalization_Translate
 
         private void Button_Click_1(object sender, RoutedEventArgs e)
         {
-            TextBlack.Text = _api.GetTranslate("good\napple\nbad", "auto", "zh");
+            //foreach (var data in _textDataList)
+            //{
+            //    data.Test();
+            //    Console.WriteLine($"{data.FileName} 完成");
+            //}
+            //Console.WriteLine(_api.GetTranslate("我\n你\n", "auto", "en"));
+            foreach (var code in Encoding.GetEncodings())
+            {
+                Console.WriteLine(code.Name);
+            }
+            
         }
 
         private void Button_Click(object sender, RoutedEventArgs e)

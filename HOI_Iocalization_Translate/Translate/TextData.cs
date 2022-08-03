@@ -10,23 +10,29 @@ namespace HOI_Iocalization_Translate.Translate
 {
     public class TextData
     {
-        private const string TEXT_REGEX = "(?<=\").+(?=\")";        
+        private const string TEXT_REGEX = "(?<=\").+(?=\")";
 
         private readonly FileInfo _fileInfo;
         public string FileName => _fileInfo.Name;
         private readonly List<string> _data = new List<string>();
-        private string _rawData;
+        private readonly List<string> _rawData;
+        /// <summary>
+        /// 每行文本被分的段数
+        /// </summary>
+        private readonly List<int> _extractLineCount = new List<int>();
+        private static readonly NLog.Logger _log = NLog.LogManager.GetCurrentClassLogger();
 
         public TextData(FileInfo fileInfo)
         {
             _fileInfo = fileInfo;
-            _rawData = File.ReadAllText(_fileInfo.FullName);
-            var list = new List<string>();
-            foreach (var line in GetLocalisationFileTextList(_fileInfo.FullName))
+            var text = GetLocalisationFileTextList(_fileInfo.FullName);
+            _rawData = text;
+            foreach (var line in GetNeedTranslateTextList(text))
             {
-                list.AddRange(ExtractTranslationPart(line));
+                var list = ExtractTranslationPart(line);
+                _data.AddRange(list);
+                _extractLineCount.Add(list.Count);
             }
-            _data.AddRange(list.Distinct());
         }
 
         /// <summary>
@@ -40,10 +46,13 @@ namespace HOI_Iocalization_Translate.Translate
 
             //忽略BOM头
             list.AddRange(File.ReadAllLines(filePath, new UTF8Encoding(false)));
-            if (list.Count > 0 && list[0] == "l_english:")
+            if (list.Count > 0 && list[0].Trim() == "l_english:")
+            {
+                Console.WriteLine("移除 l_english:");
                 list.RemoveAt(0);
+            }
             Console.WriteLine($"移除空行: {list.RemoveAll((str) => str.Trim() == string.Empty)}");
-            return GetNeedTranslateTextList(list);
+            return list;
         }
 
         /// <summary>
@@ -166,30 +175,68 @@ namespace HOI_Iocalization_Translate.Translate
             return codes.Contains(code) || (code >= '0' && code <= '9');
         }
 
+        public void Test()
+        {
+            var a = JoinTextByCharactersNumber(_data, 2000);
+            int count = 0;
+            for (int i = 0; i < a.Count; ++i)
+            {
+                var s = a[i].Replace("\n", string.Empty);
+                count += s.Length;
+            }
+            Console.WriteLine(count);
+            int count2 = 0;
+            foreach (var raw in _data)
+            {
+                count2 += raw.Length;
+            }
+            Console.WriteLine(count2);
+        }
+
         public void TranslateText(BaiduTranslationApi api, string language)
         {
-            //uint i = 0;
-            var needTranslateList = JoinTextByCharactersNumber(_data, 6000);
-            var translationList = new List<Baidu.BaiduTransResult>();
+            var needTranslateList = JoinTextByCharactersNumber(_data, 2000);
+
+            var translationList = new List<Baidu.TransResult>();
 
             foreach (var data in needTranslateList)
             {
-                translationList.Add(api.GetTransResult(data, language));
-                System.Threading.Thread.Sleep(100);
+                var result = api.GetTransResult(data, language);
+                if (result?.TransResult == null)
+                {
+                    _log.Error($"注意: {result.ErrorCode}, {result.ErrorMsg}");
+                    Environment.Exit(1);
+                }
+                translationList.AddRange(result.TransResult);
+                System.Threading.Thread.Sleep(300);
+            }
+            var sum = _extractLineCount.Sum();
+            if (translationList.Count != sum)
+            {
+                _log.Debug($"记录={sum}, 翻译={translationList.Count}");
+                Environment.Exit(1);
             }
 
-            foreach (var baiduTransResult in translationList)
+            for (int i = 0, index = 0; i < _rawData.Count; ++i)
             {
-                foreach (var transResult in baiduTransResult?.TransResult ?? new List<Baidu.TransResult>())
+                for (int j = 0; j < _extractLineCount[i]; ++j, ++index)
                 {
-                    _rawData = _rawData.Replace(transResult.Src, transResult.Dst);
+                    var old = translationList[index].Src;
+                    var newText = translationList[index].Dst;
+                    //_log.Trace($"{translationList[index].Src}, rawData={_rawData[i]}");
+                    _rawData[i] = _rawData[i].Replace(old, newText);
                 }
             }
 
-            using (var stream = new FileStream($@"C:\Users\Programmer\Desktop\新建文件夹\{_fileInfo.Name}.txt", FileMode.Create))
-            using (var writer = new StreamWriter(stream))
+            using (var stream = new FileStream($@"C:\Users\Programmer\Desktop\新建文件夹\{_fileInfo.Name}", FileMode.Create))
+            // 使用UTF-8-BOM写入
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(true)))
             {
-                writer.Write(_rawData);
+                writer.WriteLine("l_english:");
+                foreach (var line in _rawData)
+                {
+                    writer.WriteLine(line);
+                }
             }
         }
 
@@ -209,7 +256,7 @@ namespace HOI_Iocalization_Translate.Translate
             {
                 if (stringsList[i].Length > charactersNumber)
                 {
-                    Console.WriteLine("跳过拼接");
+                    _log.Info("跳过拼接");
                     continue;
                 }
 
